@@ -44,7 +44,6 @@ class Algorithm:
          latency_limit = 4
 
 
-
          return bit_rate, target_buffer, latency_limit
 
          # If you choose other

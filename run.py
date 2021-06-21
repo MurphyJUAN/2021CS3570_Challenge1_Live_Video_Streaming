@@ -8,6 +8,7 @@ import os, sys
 import numpy as np
 import multiprocessing as mp
 
+
 def test(testcase):
     
     # -- Configuration variables --
@@ -101,8 +102,8 @@ def test(testcase):
     S_skip_time = [0] * past_frame_num
     # params setting
     call_time_sum = 0 
-    while True:
 
+    while True:
         reward_frame = 0
         # input the train steps
         #if cnt > 5000:

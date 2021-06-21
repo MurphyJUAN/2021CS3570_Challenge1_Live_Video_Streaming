@@ -227,6 +227,7 @@ class Environment:
                 the_newst_frame += 1
                 current_new = self.cdn_arrive_time[quality][the_newst_frame]
             self.newest_frame = the_newst_frame
+        
         # If the CDN can get the frame:
         if int(self.time / 0.5) >= len(self.cooked_bw):
             end_of_video = True
