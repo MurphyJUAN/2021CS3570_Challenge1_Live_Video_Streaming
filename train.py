@@ -128,7 +128,6 @@ def map_latency_limit(latency_limit):
     latency_limit = LATENCY_THRESHOLD[0] +((LATENCY_THRESHOLD[1]-LATENCY_THRESHOLD[0])/(1-(-1))) * (latency_limit - (-1))
     return latency_limit
 # %%
-# 每次大概跑 7500 次
 def Step(net_env, pre_state1, pre_state2, action, last_bit_rate):
     bit_rate,target_buffer,latency_limit, last_bit_rate = map_bit_rate(action[0]), \
                                            map_target_buffer(action[1]), \
