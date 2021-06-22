@@ -22,8 +22,6 @@ if gpus:
     tf.config.set_visible_devices([gpu0],"GPU") 
 
 #%%
- 
-#%%
 # TODO
 debug = False
 testcase = ['game', 'high', debug]
@@ -48,9 +46,9 @@ video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',\
 # ---------------------End---------------------
 
 # load the trace
-all_cooked_time, all_cooked_bw, all_file_names = load_trace.load_trace(network_trace_dir)
+all_cooked_time, all_cooked_bw, all_file_names = load_trace.load_trace(network_trace_dir, shuffle=True)
 
-print(f"{VIDEO_TRACE},{NETWORK_TRACE}: Start")
+# print(f"{VIDEO_TRACE},{NETWORK_TRACE}: Start")
 
 #%%
 # System parameter
@@ -233,59 +231,60 @@ def train(testcase):
         run_time = 0
         trace_count = 1
         # feature #
-        net_env = fixed_env.Environment(all_cooked_time=all_cooked_time,
-                                all_cooked_bw=all_cooked_bw,
-                                random_seed=random_seed,
-                                logfile_path=LOG_FILE_PATH,
-                                VIDEO_SIZE_FILE=video_trace_prefix,
-                                Debug = DEBUG)
-        std_dev = 0.2
-        ou_noise = Noise.OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
-        # Init State
-        state1, state2 = getInitState()
-        while True:
-            action = ddpg.choose_action(state1, state2, ou_noise)
-            [bit_rate,target_buffer,latency_limit] = action[0], action[1], action[2]
-            n_state1, n_state2, reward, end_of_video = Step(net_env, state1 , state2, action, last_bit_rate)
-            ddpg.store_transition(state1,state2, action, reward, n_state1, n_state2)
-            state1 = n_state1
-            state2 = n_state2 
-            last_bit_rate = bit_rate 
-            ep_reward += reward  #记录当前EP的总reward
-            # print(')
-            cnt += 1
+        for video_trace_prefix in video_trace_prefixs:
+            net_env = fixed_env.Environment(all_cooked_time=all_cooked_time,
+                                    all_cooked_bw=all_cooked_bw,
+                                    random_seed=random_seed,
+                                    logfile_path=LOG_FILE_PATH,
+                                    VIDEO_SIZE_FILE=video_trace_prefix,
+                                    Debug = DEBUG)
+            std_dev = 0.2
+            ou_noise = Noise.OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
+            # Init State
+            state1, state2 = getInitState()
+            while True:
+                action = ddpg.choose_action(state1, state2, ou_noise)
+                [bit_rate,target_buffer,latency_limit] = action[0], action[1], action[2]
+                n_state1, n_state2, reward, end_of_video = Step(net_env, state1 , state2, action, last_bit_rate)
+                ddpg.store_transition(state1,state2, action, reward, n_state1, n_state2)
+                state1 = n_state1
+                state2 = n_state2 
+                last_bit_rate = bit_rate 
+                ep_reward += reward  #记录当前EP的总reward
+                # print(')
+                cnt += 1
 
-            # ---------------- Train Process---------------
-            if ddpg.pointer > MEMORY_CAPACITY:
-                ddpg.learn()
-                timestamp_end = tm.time()
-                call_time_sum += timestamp_end - timestamp_start
-                print(
-                        '\rEpisode: {}/{}  | Episode Reward: {:.4f} | Step Reward: {:.4f} | Count: {} | Trace Count: {} | Running Time: {:.4f}'.format(
-                            i, EPOCH, ep_reward, reward,
-                            cnt,
-                            trace_count, 
-                            timestamp_end - timestamp_start
-                        ), end=''
-                    )
-            # ---------------------End--------------------
-            
-            if end_of_video:
-                reward_all_sum += reward_all
-                run_time += call_time_sum / cnt
-                if trace_count >= len(all_file_names):
-                    break
-                trace_count += 1
-                cnt = 0
-                call_time_sum = 0
-                last_bit_rate = 0
-                reward_all = 0
-                bit_rate = 0
-                target_buffer = 0
+                # ---------------- Train Process---------------
+                if ddpg.pointer > MEMORY_CAPACITY:
+                    ddpg.learn()
+                    timestamp_end = tm.time()
+                    call_time_sum += timestamp_end - timestamp_start
+                    print(
+                            '\rEpisode: {}/{}  | Episode Reward: {:.4f} | Step Reward: {:.4f} | Count: {} | Trace Count: {} | Running Time: {:.4f}'.format(
+                                i, EPOCH, ep_reward, reward,
+                                cnt,
+                                trace_count, 
+                                timestamp_end - timestamp_start
+                            ), end=''
+                        )
+                # ---------------------End--------------------
                 
-            reward_all += reward
+                if end_of_video:
+                    reward_all_sum += reward_all
+                    run_time += call_time_sum / cnt
+                    if trace_count >= len(all_file_names):
+                        break
+                    trace_count += 1
+                    cnt = 0
+                    call_time_sum = 0
+                    last_bit_rate = 0
+                    reward_all = 0
+                    bit_rate = 0
+                    target_buffer = 0
+                    
+                reward_all += reward
         ddpg.save_ckpt(epoch=i)
-        print(f"{VIDEO_TRACE},{NETWORK_TRACE}: Done")
+        # print(f"{VIDEO_TRACE},{NETWORK_TRACE}: Done")
         print([reward_all_sum / trace_count, run_time / trace_count])
         ddpg.save_statistic(epoch = i, reward = reward_all_sum / trace_count)
 

@@ -6,7 +6,7 @@ import tensorlayer as tl
 import csv
 
 # Define hyperparameter
-MEMORY_CAPACITY = 10000
+MEMORY_CAPACITY = 50000
 LR_A = 0.001                # learning rate for actor
 LR_C = 0.0001             # learning rate for critic
 BATCH_SIZE = 32

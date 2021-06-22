@@ -55,7 +55,7 @@ def test(testcase):
     # -- End Configuration --
     # You shouldn't need to change the rest of the code here.
 
-    network_trace_dir = './dataset/network_trace/' + NETWORK_TRACE + '/'
+    network_trace_dir = './dataset/network_test_trace/' + NETWORK_TRACE + '/'
     video_trace_prefix = './dataset/video_trace/' + VIDEO_TRACE + '/frame_trace_'
 
     # load the trace
