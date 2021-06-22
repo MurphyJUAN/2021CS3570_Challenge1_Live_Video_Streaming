@@ -6,7 +6,7 @@ import tensorlayer as tl
 import csv
 
 # Define hyperparameter
-MEMORY_CAPACITY = 50000
+# MEMORY_CAPACITY = 10000
 LR_A = 0.001                # learning rate for actor
 LR_C = 0.0001             # learning rate for critic
 BATCH_SIZE = 64
@@ -22,13 +22,13 @@ class DDPG(object):
     """
     DDPG class
     """
-    def __init__(self, past_frame_num, a_dim, s_dim_1,s_dim_2, a_bound):
-        self.memory = np.zeros((MEMORY_CAPACITY, s_dim_1*past_frame_num*2 +  s_dim_2*2 + a_dim + 1), dtype=np.float32)
+    def __init__(self, memory_capacity, past_frame_num, a_dim, s_dim_1,s_dim_2, a_bound):
+        self.memory = np.zeros((memory_capacity, s_dim_1*past_frame_num*2 +  s_dim_2*2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
         self.past_frame_num, self.a_dim, self.s_dim_1, self.s_dim_2, self.a_bound = past_frame_num, a_dim, s_dim_1, s_dim_2, a_bound
         self.kernel_size = 4
         self.neuron = 128
-
+        self.memory_capacity = memory_capacity
         self.W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
         self.b_init = tf.constant_initializer(0.1)
 
@@ -46,12 +46,11 @@ class DDPG(object):
             x1 = tf.keras.layers.BatchNormalization()(x1)
             # x1 = tf.keras.layers.Dense(units=64, activation='relu', name='A_l1')(s1)
             x1 = tf.keras.layers.Dense(units=1, activation='relu', name='A_l2')(x1)
-            x1 = tf.keras.layers.BatchNormalization()(x1)
             x1 = tf.keras.layers.Reshape((self.s_dim_1,))(x1)
 
             s2 = tf.keras.Input(input_state_shape_2, name='A_input2')
             x = tf.keras.layers.concatenate(inputs=[x1, s2], axis=1)
-
+            x = tf.keras.layers.BatchNormalization()(x)
             x = tf.keras.layers.Dense(units=self.neuron, kernel_initializer=self.W_init, bias_initializer=self.b_init, activation='relu', name='A_l3')(x)
             x = tf.keras.layers.BatchNormalization()(x)
             x = tf.keras.layers.Dense(units=a_dim, kernel_initializer=self.W_init, bias_initializer=self.b_init, name='A_a')(x)
@@ -81,7 +80,7 @@ class DDPG(object):
             a_ = tf.keras.layers.Dense(units=a_dim, activation='relu', name='C_l3')(a)
             a_ = tf.keras.layers.BatchNormalization()(a_)
             x = tf.keras.layers.concatenate(inputs=[s_, a_], axis=1)
-            x = tf.keras.layers.Dense(units=self.neuron, kernel_initializer=self.W_init, bias_initializer=self.b_init, activation='relu', name='C_l4')(x)
+            x = tf.keras.layers.Dense(units=self.neuron, activation='relu', name='C_l4')(x)
             x = tf.keras.layers.Dense(units=1, kernel_initializer=self.W_init, bias_initializer=self.b_init, name='C_out')(x)
             return tf.keras.models.Model(inputs=[s1, s2, a], outputs=x, name='Critic' + name)
 
@@ -154,7 +153,7 @@ class DDPG(object):
         Update parameters
         :return: None
         """
-        indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)    
+        indices = np.random.choice(self.memory_capacity, size=BATCH_SIZE)    
         s1_range  = self.s_dim_1*self.past_frame_num
         s2_range = s1_range+self.s_dim_2+self.a_dim+1
         bt = self.memory[indices, :]                    
@@ -179,6 +178,7 @@ class DDPG(object):
             q_ = self.critic_target([[bs1_, bs2_], a_], training=True)
             y = br + GAMMA * q_
             q = self.critic([[bs1, bs2], ba], training=True)
+            print('**********', np.mean(tf.losses.mean_squared_error(y, q)))
             L2 = np.sum([tf.nn.l2_loss(v) for v in self.critic.trainable_weights if "W" in v.name])
             td_error = tf.losses.mean_squared_error(y, q) + L2_DECAY * L2
             record.append(np.sum(td_error))
@@ -219,7 +219,7 @@ class DDPG(object):
         # transition = np.hstack((s, a, [r], s_))
 
         
-        index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
+        index = self.pointer % self.memory_capacity  # replace the old memory with new memory
         self.memory[index, :] = transition
         self.pointer += 1
 
@@ -234,12 +234,12 @@ class DDPG(object):
         :return: None
         """
         model = 'low'
-        if not os.path.exists(f'model_low/epoch{epoch}'):
-            os.makedirs(f'model_low/epoch{epoch}')
-        self.actor.save_weights(f'model_low/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
-        self.actor_target.save_weights(f'model_low/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
-        self.critic.save_weights(f'model_low/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
-        self.critic_target.save_weights(f'model_low/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
+        if not os.path.exists(f'model/epoch{epoch}'):
+            os.makedirs(f'model/epoch{epoch}')
+        self.actor.save_weights(f'model/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
+        self.actor_target.save_weights(f'model/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
+        self.critic.save_weights(f'model/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
+        self.critic_target.save_weights(f'model/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
 
     def load_ckpt(self, epoch=0):
         """

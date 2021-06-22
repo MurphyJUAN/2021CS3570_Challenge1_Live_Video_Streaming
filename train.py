@@ -58,7 +58,7 @@ frame_time_len = 0.04
 
 # Train Parameter
 EPOCH = 300
-MEMORY_CAPACITY = 50000
+MEMORY_CAPACITY =   10000
 # %%
 # init
 BIT_RATE      = [500.0,850.0,1200.0,1850.0] # kpbs
@@ -216,7 +216,7 @@ def train(testcase):
     s_dim_2 = 6
     a_dim = 3
     a_bound = 1
-    ddpg = DDPG.DDPG(past_frame_num, a_dim, s_dim_1, s_dim_2, a_bound)
+    ddpg = DDPG.DDPG(MEMORY_CAPACITY, past_frame_num, a_dim, s_dim_1, s_dim_2, a_bound)
     # defalut setting
     last_bit_rate = 0
     bit_rate = 0
