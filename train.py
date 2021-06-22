@@ -35,9 +35,9 @@ if not os.path.exists(LOG_FILE_PATH):
 # video_trace_prefix = './dataset/video_trace/' + VIDEO_TRACE + '/frame_trace_'
 NETWORK_TRACE = 'low'
 network_trace_dir = './dataset/network_train_trace/' + NETWORK_TRACE + '/'
-video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',\
-                       './dataset/video_trace/' + 'room' + '/frame_trace_', \
-                       './dataset/video_trace/' + 'sports' + '/frame_trace_']
+video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',]
+                    #    './dataset/video_trace/' + 'room' + '/frame_trace_', \
+                    #    './dataset/video_trace/' + 'sports' + '/frame_trace_']
 
 # ----------------- Dev Debug -----------------
 # network_trace_dir = './dataset/network_dev_train/' + NETWORK_TRACE + '/'
@@ -104,12 +104,14 @@ def getInitState():
 
     state1 = [S_time_interval, S_send_data_size, S_frame_time_lens, S_throughputs, S_rebuf, \
             S_play_time_len, S_skip_time, S_end_delay, S_buffer_size, S_cdn_flag, S_buffer_flag, ]
+    # state1 = [S_time_interval, S_send_data_size, S_frame_time_lens,  S_rebuf, \
+    #         S_play_time_len, S_skip_time, S_end_delay, S_buffer_size, S_cdn_flag, S_buffer_flag, ]
     state2 = [0]*6
     return state1, state2
 
 # %%
 def map_bit_rate(bit_rate):
-        if bit_rate >= -1 and bit_rate < -0.5:
+        if bit_rate < -0.5:
             bit_rate = 0
         elif bit_rate >= -0.5 and bit_rate < 0:
             bit_rate = 1
@@ -262,7 +264,7 @@ def train(testcase):
                                 cnt,
                                 trace_count, 
                                 timestamp_end - timestamp_start
-                            ), end=''
+                            ), end=""
                         )
                 # ---------------------End--------------------
                 

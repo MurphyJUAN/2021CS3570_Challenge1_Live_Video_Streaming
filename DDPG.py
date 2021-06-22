@@ -9,7 +9,7 @@ import csv
 MEMORY_CAPACITY = 50000
 LR_A = 0.001                # learning rate for actor
 LR_C = 0.0001             # learning rate for critic
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 GAMMA = 0.99                 # reward discount
 TAU = 0.005                 # soft replacement
 L2_DECAY = 0.01
@@ -29,8 +29,8 @@ class DDPG(object):
         self.kernel_size = 4
         self.neuron = 128
 
-        # W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
-        # b_init = tf.constant_initializer(0.1)
+        self.W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
+        self.b_init = tf.constant_initializer(0.1)
 
         def get_actor(input_state_shape_1, input_state_shape_2, name=''):
             """
@@ -43,14 +43,20 @@ class DDPG(object):
 
             s1 = tf.keras.Input(input_state_shape_1, name='A_input1')
             x1 = tf.keras.layers.Conv1D(filters=self.neuron, kernel_size=self.kernel_size, activation='relu', padding='same', name='A_l1')(s1)
+            x1 = tf.keras.layers.BatchNormalization()(x1)
+            # x1 = tf.keras.layers.Dense(units=64, activation='relu', name='A_l1')(s1)
             x1 = tf.keras.layers.Dense(units=1, activation='relu', name='A_l2')(x1)
+            x1 = tf.keras.layers.BatchNormalization()(x1)
             x1 = tf.keras.layers.Reshape((self.s_dim_1,))(x1)
 
             s2 = tf.keras.Input(input_state_shape_2, name='A_input2')
             x = tf.keras.layers.concatenate(inputs=[x1, s2], axis=1)
 
-            x = tf.keras.layers.Dense(units=self.neuron, activation='relu', name='A_l3')(x)
-            x = tf.keras.layers.Dense(units=a_dim, activation='tanh' , kernel_initializer=last_init, name='A_a')(x)
+            x = tf.keras.layers.Dense(units=self.neuron, kernel_initializer=self.W_init, bias_initializer=self.b_init, activation='relu', name='A_l3')(x)
+            x = tf.keras.layers.BatchNormalization()(x)
+            x = tf.keras.layers.Dense(units=a_dim, kernel_initializer=self.W_init, bias_initializer=self.b_init, name='A_a')(x)
+            x = tf.keras.layers.BatchNormalization()(x)
+            x = tf.keras.layers.Activation('tanh')(x)
             return tf.keras.models.Model(inputs=[s1, s2], outputs=x, name='Actor' + name)
 
         def get_critic(input_state_shape_1, input_state_shape_2, input_action_shape, name=''):
@@ -63,7 +69,9 @@ class DDPG(object):
             """
             s1 = tf.keras.Input(input_state_shape_1, name='C_s_input1')
             s1_ = tf.keras.layers.Conv1D(filters=self.neuron, kernel_size=self.kernel_size, activation='relu', padding='same', name='C_l1')(s1)
+            s1_ = tf.keras.layers.BatchNormalization()(s1_)
             s1_ = tf.keras.layers.Dense(units=1, activation='relu', name='C_l2')(s1_)
+            s1_ = tf.keras.layers.BatchNormalization()(s1_)
             s1_ = tf.keras.layers.Reshape((self.s_dim_1,))(s1_)
 
             s2 = tf.keras.Input(input_state_shape_2, name='C_s_input2')
@@ -71,10 +79,10 @@ class DDPG(object):
 
             a = tf.keras.Input(input_action_shape, name='C_a_input')
             a_ = tf.keras.layers.Dense(units=a_dim, activation='relu', name='C_l3')(a)
-            
+            a_ = tf.keras.layers.BatchNormalization()(a_)
             x = tf.keras.layers.concatenate(inputs=[s_, a_], axis=1)
-            x = tf.keras.layers.Dense(units=self.neuron, activation='relu', name='C_l4')(x)
-            x = tf.keras.layers.Dense(units=1, name='C_out')(x)
+            x = tf.keras.layers.Dense(units=self.neuron, kernel_initializer=self.W_init, bias_initializer=self.b_init, activation='relu', name='C_l4')(x)
+            x = tf.keras.layers.Dense(units=1, kernel_initializer=self.W_init, bias_initializer=self.b_init, name='C_out')(x)
             return tf.keras.models.Model(inputs=[s1, s2, a], outputs=x, name='Critic' + name)
 
         self.actor = get_actor([s_dim_1, past_frame_num], [s_dim_2])
@@ -130,6 +138,7 @@ class DDPG(object):
         
         if noise_obj:
             noise = noise_obj()
+            a = action.numpy()
             action = action.numpy() + noise
         else:
             action = action.numpy()
@@ -137,6 +146,7 @@ class DDPG(object):
         # target_buffer = self.map_target_buffer(action[1])
         # latency_limit = self.map_latency_limit(action[2])
         # action = np.array([bit_rate, target_buffer, latency_limit])
+        print('======', a[0], action[0], noise)
         return action
 
     def learn(self):
@@ -223,12 +233,13 @@ class DDPG(object):
         save trained weights
         :return: None
         """
-        if not os.path.exists(f'model/epoch{epoch}'):
-            os.makedirs(f'model/epoch{epoch}')
-        self.actor.save_weights(f'model/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
-        self.actor_target.save_weights(f'model/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
-        self.critic.save_weights(f'model/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
-        self.critic_target.save_weights(f'model/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
+        model = 'low'
+        if not os.path.exists(f'model_low/epoch{epoch}'):
+            os.makedirs(f'model_low/epoch{epoch}')
+        self.actor.save_weights(f'model_low/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
+        self.actor_target.save_weights(f'model_low/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
+        self.critic.save_weights(f'model_low/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
+        self.critic_target.save_weights(f'model_low/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
 
     def load_ckpt(self, epoch=0):
         """

@@ -160,6 +160,7 @@ class DDPG(object):
         :return: act
         """
         action = self.actor(np.array([s], dtype=np.float32))[0]
+        print('---action---', action)
         return action
 
     def learn(self):
