@@ -16,9 +16,8 @@ import tensorflow as tf
 gpus = tf.config.list_physical_devices("GPU")
  
 if gpus:
-    gpu0 = gpus[0] #如果有多个GPU，仅使用第0个GPU
-    tf.config.experimental.set_memory_growth(gpu0, True) #设置GPU显存用量按需使用
-    # 或者也可以设置GPU显存为固定使用量(例如：4G)
+    gpu0 = gpus[0]
+    tf.config.experimental.set_memory_growth(gpu0, True) 
     tf.config.set_visible_devices([gpu0],"GPU") 
 
 #%%
@@ -34,7 +33,7 @@ if not os.path.exists(LOG_FILE_PATH):
     os.makedirs(LOG_FILE_PATH)
 # network_trace_dir = './dataset/network_trace/' + NETWORK_TRACE + '/'
 # video_trace_prefix = './dataset/video_trace/' + VIDEO_TRACE + '/frame_trace_'
-NETWORK_TRACE = 'all'
+NETWORK_TRACE = 'low'
 network_trace_dir = './dataset/network_train_trace/' + NETWORK_TRACE + '/'
 video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',\
                        './dataset/video_trace/' + 'room' + '/frame_trace_', \
@@ -212,7 +211,6 @@ def Step(net_env, pre_state1, pre_state2, action, last_bit_rate):
 
 # %%
 def train(testcase):
-    #定义状态空间，动作空间，动作幅度范围
     s_dim_1 = 11
     s_dim_2 = 6
     a_dim = 3
@@ -250,7 +248,7 @@ def train(testcase):
                 state1 = n_state1
                 state2 = n_state2 
                 last_bit_rate = bit_rate 
-                ep_reward += reward  #记录当前EP的总reward
+                ep_reward += reward
                 # print(')
                 cnt += 1
 
