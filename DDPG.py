@@ -2,15 +2,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import os
-# import tensorlayer as tl
+import tensorlayer as tl
+import csv
 
 # Define hyperparameter
-MEMORY_CAPACITY = 1000
-LR_A = 0.0001                # learning rate for actor
-LR_C = 0.001             # learning rate for critic
+MEMORY_CAPACITY = 10000
+LR_A = 0.001                # learning rate for actor
+LR_C = 0.0001             # learning rate for critic
 BATCH_SIZE = 32
-GAMMA = 0.9                 # reward discount
-TAU = 0.01                  # soft replacement
+GAMMA = 0.99                 # reward discount
+TAU = 0.005                 # soft replacement
+L2_DECAY = 0.01
 
 BIT_RATE      = [500.0,850.0,1200.0,1850.0]
 TARGET_BUFFER = [0.5,1.0]
@@ -26,7 +28,7 @@ class DDPG(object):
         self.memory = np.zeros((MEMORY_CAPACITY, s_dim_1*past_frame_num*2 +  s_dim_2*2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
         self.past_frame_num, self.a_dim, self.s_dim_1, self.s_dim_2, self.a_bound = past_frame_num, a_dim, s_dim_1, s_dim_2, a_bound
-        self.kernel_size = 3
+        self.kernel_size = 4
         self.neuron = 128
 
         # W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
@@ -48,12 +50,12 @@ class DDPG(object):
             x1 = tf.keras.layers.Reshape((self.s_dim_1,))(x1)
 
             s2 = tf.keras.Input(input_state_shape_2, name='A_input2')
-
             x = tf.keras.layers.concatenate(inputs=[x1, s2], axis=1)
 
             x = tf.keras.layers.Dense(units=self.neuron, activation='relu', name='A_l3')(x)
+            # Problem: always 輸出 1 或 0
             x = tf.keras.layers.Dense(units=a_dim, activation='tanh' , kernel_initializer=last_init, name='A_a')(x)
-            x = tf.keras.layers.Lambda(lambda x: np.array(a_bound) * x)(x)            #注意这里，先用tanh把范围限定在[-1,1]之间，再进行映射
+            # x = tf.keras.layers.Lambda(lambda x: np.array(a_bound) * x)(x)            #注意这里，先用tanh把范围限定在[-1,1]之间，再进行映射
             return tf.keras.models.Model(inputs=[s1, s2], outputs=x, name='Actor' + name)
 
         #建立Critic网络，输入s，a。输出Q值
@@ -126,25 +128,25 @@ class DDPG(object):
         for i, j in zip(self.actor_target.trainable_weights + self.critic_target.trainable_weights, paras):
             i.assign(self.ema.average(j))                                       # 用滑动平均赋值
 
-    def map_bit_rate(self, bit_rate):
-        if bit_rate >= -1 and bit_rate < -0.5:
-            bit_rate = 0
-        elif bit_rate >= -0.5 and bit_rate < 0:
-            bit_rate = 1
-        elif bit_rate >= 0 and bit_rate < 0.5:
-            bit_rate = 2
-        else:
-            bit_rate = 3
-        return bit_rate
-    def map_target_buffer(self, target_buffer):
-        if target_buffer < 0:
-            target_buffer = 0
-        else:
-            target_buffer = 1
-        return target_buffer
-    def map_latency_limit(self, latency_limit):
-        latency_limit = LATENCY_THRESHOLD[0] +(LATENCY_THRESHOLD[1]-LATENCY_THRESHOLD[0])/(1-(-1)) * (latency_limit - (-1))
-        return latency_limit
+    # def map_bit_rate(self, bit_rate):
+    #     if bit_rate >= -1 and bit_rate < -0.5:
+    #         bit_rate = 0
+    #     elif bit_rate >= -0.5 and bit_rate < 0:
+    #         bit_rate = 1
+    #     elif bit_rate >= 0 and bit_rate < 0.5:
+    #         bit_rate = 2
+    #     else:
+    #         bit_rate = 3
+    #     return bit_rate
+    # def map_target_buffer(self, target_buffer):
+    #     if target_buffer < 0:
+    #         target_buffer = 0
+    #     else:
+    #         target_buffer = 1
+    #     return target_buffer
+    # def map_latency_limit(self, latency_limit):
+    #     latency_limit = LATENCY_THRESHOLD[0] +((LATENCY_THRESHOLD[1]-LATENCY_THRESHOLD[0])/(1-(-1))) * (latency_limit - (-1))
+    #     return latency_limit
     # 选择动作，把s带进入，输出a
     def choose_action(self, s1, s2, noise_obj=None):
         """
@@ -156,13 +158,16 @@ class DDPG(object):
         s1 = np.array([s1], dtype=np.float32)
         s2 = np.array([s2], dtype=np.float32)
         action = self.actor([s1, s2])[0]
-
-        noise = noise_obj()
-        action = action.numpy() + noise
-        bit_rate = self.map_bit_rate(action[0])
-        target_buffer = self.map_target_buffer(action[1])
-        latency_limit = self.map_latency_limit(action[2])
-        action = np.array([bit_rate, target_buffer, latency_limit])
+        
+        if noise_obj:
+            noise = noise_obj()
+            action = action.numpy() + noise
+        else:
+            action = action.numpy()
+        # bit_rate = self.map_bit_rate(action[0])
+        # target_buffer = self.map_target_buffer(action[1])
+        # latency_limit = self.map_latency_limit(action[2])
+        # action = np.array([bit_rate, target_buffer, latency_limit])
         return action
 
     def learn(self):
@@ -190,12 +195,15 @@ class DDPG(object):
         # Critic：
         # Critic更新和DQN很像，不过target不是argmax了，是用critic_target计算出来的。
         # br + GAMMA * q_
+        record = []
         with tf.GradientTape() as tape:
             a_ = self.actor_target([bs1_, bs2_], training=True)
             q_ = self.critic_target([[bs1_, bs2_], a_], training=True)
             y = br + GAMMA * q_
-            q = self.critic([[bs1, bs2], ba], traning=True)
-            td_error = tf.losses.mean_squared_error(y, q)
+            q = self.critic([[bs1, bs2], ba], training=True)
+            L2 = np.sum([tf.nn.l2_loss(v) for v in self.critic.trainable_weights if "W" in v.name])
+            td_error = tf.losses.mean_squared_error(y, q) + L2_DECAY * L2
+            record.append(np.sum(td_error))
         c_grads = tape.gradient(td_error, self.critic.trainable_weights)
         self.critic_opt.apply_gradients(zip(c_grads, self.critic.trainable_weights))
 
@@ -205,8 +213,15 @@ class DDPG(object):
             a = self.actor([bs1, bs2], training=True)
             q = self.critic([[bs1, bs2], a], training=True)
             a_loss = -tf.reduce_mean(q)  # 【敲黑板】：注意这里用负号，是梯度上升！也就是离目标会越来越远的，就是越来越大。
+            record.append(np.sum(a_loss))
         a_grads = tape.gradient(a_loss, self.actor.trainable_weights)
         self.actor_opt.apply_gradients(zip(a_grads, self.actor.trainable_weights))
+
+        # with open('test.csv', 'a', newline='') as csvfile:
+        #     # 建立 CSV 檔寫入器
+        #     writer = csv.writer(csvfile)
+        #     # 寫入一列資料
+        #     writer.writerow(record)
 
         self.ema_update()
     # 保存s，a，r，s_
@@ -242,25 +257,31 @@ class DDPG(object):
         self.memory[index, :] = transition
         self.pointer += 1
 
-    def save_ckpt(self):
+    def save_statistic(self, epoch, reward):
+        with open('model/output.csv', 'a', newline='') as csvfile:
+            # 建立 CSV 檔寫入器
+            writer = csv.writer(csvfile)
+            # 寫入一列資料
+            writer.writerow([epoch, reward])
+    
+    def save_ckpt(self, epoch=0):
         """
         save trained weights
         :return: None
         """
-        if not os.path.exists('model'):
-            os.makedirs('model')
+        if not os.path.exists(f'model/epoch{epoch}'):
+            os.makedirs(f'model/epoch{epoch}')
+        self.actor.save_weights(f'model/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
+        self.actor_target.save_weights(f'model/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
+        self.critic.save_weights(f'model/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
+        self.critic_target.save_weights(f'model/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
 
-        tf.files.save_weights_to_hdf5('model/ddpg_actor.hdf5', self.actor)
-        tf.files.save_weights_to_hdf5('model/ddpg_actor_target.hdf5', self.actor_target)
-        tf.files.save_weights_to_hdf5('model/ddpg_critic.hdf5', self.critic)
-        tf.files.save_weights_to_hdf5('model/ddpg_critic_target.hdf5', self.critic_target)
-
-    def load_ckpt(self):
+    def load_ckpt(self, epoch=0):
         """
         load trained weights
         :return: None
         """
-        tf.files.load_hdf5_to_weights_in_order('model/ddpg_actor.hdf5', self.actor)
-        tf.files.load_hdf5_to_weights_in_order('model/ddpg_actor_target.hdf5', self.actor_target)
-        tf.files.load_hdf5_to_weights_in_order('model/ddpg_critic.hdf5', self.critic)
-        tf.files.load_hdf5_to_weights_in_order('model/ddpg_critic_target.hdf5', self.critic_target)
+        self.actor.load_weights(f'model/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
+        self.actor_target.load_weights(f'model/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
+        self.critic.load_weights(f'model/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
+        self.critic_target.load_weights(f'model/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')

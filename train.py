@@ -10,20 +10,42 @@ import numpy as np
 import multiprocessing as mp
 import DDPG
 import Noise
+import tensorflow as tf
 
+#%%
+gpus = tf.config.list_physical_devices("GPU")
+ 
+if gpus:
+    gpu0 = gpus[0] #如果有多个GPU，仅使用第0个GPU
+    tf.config.experimental.set_memory_growth(gpu0, True) #设置GPU显存用量按需使用
+    # 或者也可以设置GPU显存为固定使用量(例如：4G)
+    tf.config.set_visible_devices([gpu0],"GPU") 
+
+#%%
+ 
 #%%
 # TODO
 debug = False
 testcase = ['game', 'high', debug]
-VIDEO_TRACE = testcase[0]
-NETWORK_TRACE = testcase[1]
+# VIDEO_TRACE = testcase[0]
+# NETWORK_TRACE = testcase[1]
 DEBUG = testcase[2]
 LOG_FILE_PATH = './log/'
 # create result directory
 if not os.path.exists(LOG_FILE_PATH):
     os.makedirs(LOG_FILE_PATH)
-network_trace_dir = './dataset/network_trace/' + NETWORK_TRACE + '/'
-video_trace_prefix = './dataset/video_trace/' + VIDEO_TRACE + '/frame_trace_'
+# network_trace_dir = './dataset/network_trace/' + NETWORK_TRACE + '/'
+# video_trace_prefix = './dataset/video_trace/' + VIDEO_TRACE + '/frame_trace_'
+NETWORK_TRACE = 'all'
+network_trace_dir = './dataset/network_train_trace/' + NETWORK_TRACE + '/'
+video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',\
+                       './dataset/video_trace/' + 'room' + '/frame_trace_', \
+                       './dataset/video_trace/' + 'sports' + '/frame_trace_']
+
+# ----------------- Dev Debug -----------------
+# network_trace_dir = './dataset/network_dev_train/' + NETWORK_TRACE + '/'
+# video_trace_prefix = './dataset/video_dev_train/' + VIDEO_TRACE + '/frame_trace_'
+# ---------------------End---------------------
 
 # load the trace
 all_cooked_time, all_cooked_bw, all_file_names = load_trace.load_trace(network_trace_dir)
@@ -38,12 +60,13 @@ FPS = 25
 frame_time_len = 0.04
 
 # Train Parameter
-EPOCH = 3
-MEMORY_CAPACITY = 1000
+EPOCH = 300
+MEMORY_CAPACITY = 50000
 # %%
 # init
 BIT_RATE      = [500.0,850.0,1200.0,1850.0] # kpbs
 TARGET_BUFFER = [0.5,1.0]   # seconds
+LATENCY_THRESHOLD = [0.3, 2.5]
 
 # QOE setting
 reward_frame = 0
@@ -86,11 +109,35 @@ def getInitState():
             S_play_time_len, S_skip_time, S_end_delay, S_buffer_size, S_cdn_flag, S_buffer_flag, ]
     state2 = [0]*6
     return state1, state2
+
+# %%
+def map_bit_rate(bit_rate):
+        if bit_rate >= -1 and bit_rate < -0.5:
+            bit_rate = 0
+        elif bit_rate >= -0.5 and bit_rate < 0:
+            bit_rate = 1
+        elif bit_rate >= 0 and bit_rate < 0.5:
+            bit_rate = 2
+        else:
+            bit_rate = 3
+        return bit_rate
+def map_target_buffer(target_buffer):
+    if target_buffer < 0:
+        target_buffer = 0
+    else:
+        target_buffer = 1
+    return target_buffer
+def map_latency_limit(latency_limit):
+    latency_limit = LATENCY_THRESHOLD[0] +((LATENCY_THRESHOLD[1]-LATENCY_THRESHOLD[0])/(1-(-1))) * (latency_limit - (-1))
+    return latency_limit
 # %%
 # 每次大概跑 7500 次
 def Step(net_env, pre_state1, pre_state2, action, last_bit_rate):
-    bit_rate,target_buffer,latency_limit = action[0], action[1], action[2]
-
+    bit_rate,target_buffer,latency_limit, last_bit_rate = map_bit_rate(action[0]), \
+                                           map_target_buffer(action[1]), \
+                                           map_latency_limit(action[2]), \
+                                           map_bit_rate(last_bit_rate)
+    reward_all = 0
     while True:
         reward_frame = 0
         
@@ -160,7 +207,10 @@ def Step(net_env, pre_state1, pre_state2, action, last_bit_rate):
             state1 = [S_time_interval, S_send_data_size, S_frame_time_lens, S_throughputs, S_rebuf, \
             S_play_time_len, S_skip_time, S_end_delay, S_buffer_size, S_cdn_flag, S_buffer_flag, ]
             state2 = [np.sum(S_rebuf), np.sum(S_skip_time), end_delay, cdn_flag, buffer_flag, last_bit_rate]
-            return state1, state2, reward_frame, end_of_video
+            reward_all += reward_frame
+            return state1, state2, reward_all, end_of_video
+        
+        reward_all += reward_frame
 
 # %%
 def train(testcase):
@@ -173,9 +223,8 @@ def train(testcase):
     # defalut setting
     last_bit_rate = 0
     bit_rate = 0
-    target_buffer = 0
-    latency_limit = 4
     for i in range(EPOCH):
+        timestamp_start = tm.time()
         call_time_sum = 0 
         cnt = 0
         ep_reward = 0
@@ -184,7 +233,6 @@ def train(testcase):
         run_time = 0
         trace_count = 1
         # feature #
-
         net_env = fixed_env.Environment(all_cooked_time=all_cooked_time,
                                 all_cooked_bw=all_cooked_bw,
                                 random_seed=random_seed,
@@ -197,7 +245,6 @@ def train(testcase):
         state1, state2 = getInitState()
         while True:
             action = ddpg.choose_action(state1, state2, ou_noise)
-            action = [int(action[0]), int(action[1]), action[2]]
             [bit_rate,target_buffer,latency_limit] = action[0], action[1], action[2]
             n_state1, n_state2, reward, end_of_video = Step(net_env, state1 , state2, action, last_bit_rate)
             ddpg.store_transition(state1,state2, action, reward, n_state1, n_state2)
@@ -208,16 +255,14 @@ def train(testcase):
             # print(')
             cnt += 1
 
-            # print('---cnt---:', cnt)
             # ---------------- Train Process---------------
             if ddpg.pointer > MEMORY_CAPACITY:
-                timestamp_start = tm.time()
                 ddpg.learn()
                 timestamp_end = tm.time()
                 call_time_sum += timestamp_end - timestamp_start
                 print(
-                        '\rEpisode: {}/{}  | Episode Reward: {:.4f} | Count: {} | Trace Count: {} | Running Time: {:.4f}'.format(
-                            i, EPOCH, ep_reward,
+                        '\rEpisode: {}/{}  | Episode Reward: {:.4f} | Step Reward: {:.4f} | Count: {} | Trace Count: {} | Running Time: {:.4f}'.format(
+                            i, EPOCH, ep_reward, reward,
                             cnt,
                             trace_count, 
                             timestamp_end - timestamp_start
@@ -239,8 +284,10 @@ def train(testcase):
                 target_buffer = 0
                 
             reward_all += reward
+        ddpg.save_ckpt(epoch=i)
         print(f"{VIDEO_TRACE},{NETWORK_TRACE}: Done")
         print([reward_all_sum / trace_count, run_time / trace_count])
+        ddpg.save_statistic(epoch = i, reward = reward_all_sum / trace_count)
 
 # %%
 train(testcase)
