@@ -7,8 +7,8 @@ import csv
 
 # Define hyperparameter
 # MEMORY_CAPACITY = 10000
-LR_A = 0.001                # learning rate for actor
-LR_C = 0.0001             # learning rate for critic
+LR_A = 0.0001                # learning rate for actor
+LR_C = 0.001             # learning rate for critic
 BATCH_SIZE = 64
 GAMMA = 0.99                 # reward discount
 TAU = 0.005                 # soft replacement
@@ -123,6 +123,25 @@ class DDPG(object):
         for i, j in zip(self.actor_target.trainable_weights + self.critic_target.trainable_weights, paras):
             i.assign(self.ema.average(j))                                       
 
+    def map_bit_rate(self,bit_rate):
+        if bit_rate < -0.5:
+            bit_rate = 0
+        elif bit_rate >= -0.5 and bit_rate < 0:
+            bit_rate = 1
+        elif bit_rate >= 0 and bit_rate < 0.5:
+            bit_rate = 2
+        else:
+            bit_rate = 3
+        return bit_rate
+    def map_target_buffer(self,target_buffer):
+        if target_buffer < 0:
+            target_buffer = 0
+        else:
+            target_buffer = 1
+        return target_buffer
+    def map_latency_limit(self,latency_limit):
+        latency_limit = LATENCY_THRESHOLD[0] +((LATENCY_THRESHOLD[1]-LATENCY_THRESHOLD[0])/(1-(-1))) * (latency_limit - (-1))
+        return latency_limit
 
     def choose_action(self, s1, s2, noise_obj=None):
         """
@@ -141,11 +160,10 @@ class DDPG(object):
             action = action.numpy() + noise
         else:
             action = action.numpy()
-        # bit_rate = self.map_bit_rate(action[0])
-        # target_buffer = self.map_target_buffer(action[1])
-        # latency_limit = self.map_latency_limit(action[2])
-        # action = np.array([bit_rate, target_buffer, latency_limit])
-        print('======', a[0], action[0], noise)
+        bit_rate = self.map_bit_rate(action[0])
+        target_buffer = self.map_target_buffer(action[1])
+        latency_limit = self.map_latency_limit(action[2])
+        action = np.array([bit_rate, target_buffer, latency_limit])
         return action
 
     def learn(self):
@@ -178,9 +196,9 @@ class DDPG(object):
             q_ = self.critic_target([[bs1_, bs2_], a_], training=True)
             y = br + GAMMA * q_
             q = self.critic([[bs1, bs2], ba], training=True)
-            print('**********', np.mean(tf.losses.mean_squared_error(y, q)))
+            # print('**********', np.mean(tf.losses.mean_squared_error(y, q)))
             L2 = np.sum([tf.nn.l2_loss(v) for v in self.critic.trainable_weights if "W" in v.name])
-            td_error = tf.losses.mean_squared_error(y, q) + L2_DECAY * L2
+            td_error = tf.losses.mean_squared_error(y, q)
             record.append(np.sum(td_error))
         c_grads = tape.gradient(td_error, self.critic.trainable_weights)
         self.critic_opt.apply_gradients(zip(c_grads, self.critic.trainable_weights))
@@ -224,7 +242,7 @@ class DDPG(object):
         self.pointer += 1
 
     def save_statistic(self, epoch, reward):
-        with open('model/output.csv', 'a', newline='') as csvfile:
+        with open('model/output(new).csv', 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow([epoch, reward])
     
@@ -233,20 +251,20 @@ class DDPG(object):
         save trained weights
         :return: None
         """
-        model = 'low'
-        if not os.path.exists(f'model/epoch{epoch}'):
-            os.makedirs(f'model/epoch{epoch}')
-        self.actor.save_weights(f'model/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
-        self.actor_target.save_weights(f'model/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
-        self.critic.save_weights(f'model/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
-        self.critic_target.save_weights(f'model/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
+        folder = 'NEW'
+        if not os.path.exists(f'model/{folder}/epoch{epoch}'):
+            os.makedirs(f'model/{folder}/epoch{epoch}')
+        self.actor.save_weights(f'model/{folder}/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
+        self.actor_target.save_weights(f'model/{folder}/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
+        self.critic.save_weights(f'model/{folder}/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
+        self.critic_target.save_weights(f'model/{folder}/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
 
-    def load_ckpt(self, epoch=0):
+    def load_ckpt(self, epoch=0, folder=''):
         """
         load trained weights
         :return: None
         """
-        self.actor.load_weights(f'model/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
-        self.actor_target.load_weights(f'model/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
-        self.critic.load_weights(f'model/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
-        self.critic_target.load_weights(f'model/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')
+        self.actor.load_weights(f'model{folder}/epoch{epoch}/ddpg_actor_{epoch}.ckpt')
+        self.actor_target.load_weights(f'model{folder}/epoch{epoch}/ddpg_actor_target_{epoch}.ckpt')
+        self.critic.load_weights(f'model{folder}/epoch{epoch}/ddpg_critic_{epoch}.ckpt')
+        self.critic_target.load_weights(f'model{folder}/epoch{epoch}/ddpg_critic_target_{epoch}.ckpt')

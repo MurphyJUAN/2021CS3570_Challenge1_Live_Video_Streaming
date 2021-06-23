@@ -33,11 +33,11 @@ if not os.path.exists(LOG_FILE_PATH):
     os.makedirs(LOG_FILE_PATH)
 # network_trace_dir = './dataset/network_trace/' + NETWORK_TRACE + '/'
 # video_trace_prefix = './dataset/video_trace/' + VIDEO_TRACE + '/frame_trace_'
-NETWORK_TRACE = 'low'
+NETWORK_TRACE = 'all'
 network_trace_dir = './dataset/network_train_trace/' + NETWORK_TRACE + '/'
-video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',]
-                    #    './dataset/video_trace/' + 'room' + '/frame_trace_', \
-                    #    './dataset/video_trace/' + 'sports' + '/frame_trace_']
+video_trace_prefixs = ['./dataset/video_trace/' + 'game' + '/frame_trace_',\
+                       './dataset/video_trace/' + 'room' + '/frame_trace_', \
+                       './dataset/video_trace/' + 'sports' + '/frame_trace_']
 
 # ----------------- Dev Debug -----------------
 # network_trace_dir = './dataset/network_dev_train/' + NETWORK_TRACE + '/'
@@ -58,7 +58,7 @@ frame_time_len = 0.04
 
 # Train Parameter
 EPOCH = 300
-MEMORY_CAPACITY =   10000
+MEMORY_CAPACITY =   50000
 # %%
 # init
 BIT_RATE      = [500.0,850.0,1200.0,1850.0] # kpbs
@@ -239,6 +239,7 @@ def train(testcase):
                                     Debug = DEBUG)
             std_dev = 0.2
             ou_noise = Noise.OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
+            trace_count = 1
             # Init State
             state1, state2 = getInitState()
             while True:
